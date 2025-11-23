@@ -1,0 +1,41 @@
+/*
+    Schema:
+        "datasets": {
+            "<dataset_name>": {
+                "class": "<dataset_class>", // optional, default to the specified one in the code
+                **kwargs // the arguments to initialize the dataset class
+            }
+        },
+        "splits": {
+            "<split_name>": [
+                {
+                    "dataset": "<dataset_name>",
+                    // optional slicing parameters
+                    "starts": <int>, // optional, default to None
+                    "ends": <int>,   // optional, default to None
+                    "repeat": <int>  // optional, default to 1 
+                }
+            ]
+        }
+*/
+
+// Example configuration for a specific dataset and its splits
+{
+    "datasets": {
+        "dataset.task.version": {
+            "data_path": "/path/to/your/task.jsonl",
+            "image_dir": "/path/to/your/images"
+        }
+    },
+    "splits": {
+        "train": [
+            {"dataset": "dataset.task.version", "ends": -150, "weight": 0.2}
+        ],
+        "test": [
+            {"dataset": "dataset.task.version", "starts": -150, "ends": -50}
+        ],
+        "valid": [
+            {"dataset": "dataset.task.version", "starts": -3}
+        ]
+    }
+}
