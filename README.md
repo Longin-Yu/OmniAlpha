@@ -52,11 +52,18 @@ Pretrained model checkpoints are **Coming Soon**. Stay tuned!
 
 ## 🚀 Inference
 
-To run inference using pretrained models:
+You can utilize the provided script to run inference with our pretrained models.
 
-```bash
-# Run inference
-```
+1. **Configure**: Edit `scripts/diffusion_infer.sh` to select the specific task (e.g., T2I, layer decompose) and customize inference parameters.
+2. **Execute**: Run the script using the following command:
+
+    ```bash
+    bash scripts/diffusion_infer.sh
+    ```
+
+3. **Some Example Results**:
+    * **Inputs**: See `tasks/diffusion/inputs` for reference images.
+    * **Outputs**: Some inference results are shown in `tasks/diffusion/outputs`.
 
 ## 🏋️ Training
 
@@ -64,6 +71,9 @@ Run the following command to start training the Qwen-based image model:
 
 ```bash
 # Start training
+bash scripts/vae_convert.sh
+bash scripts/vae_train.sh
+bash scripts/train_qwen_image.sh
 ```
 
 ## Citation
