@@ -76,6 +76,10 @@ bash scripts/vae_train.sh
 bash scripts/train_qwen_image.sh
 ```
 
+## 🔗 Contact
+
+Feel free to reach out via email at longinyh@gmail.com. You can also open an issue if you have ideas to share or would like to contribute data for training future models.
+
 ## Citation
 
 ```bibtex
