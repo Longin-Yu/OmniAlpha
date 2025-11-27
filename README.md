@@ -83,5 +83,10 @@ Feel free to reach out via email at longinyh@gmail.com. You can also open an iss
 ## Citation
 
 ```bibtex
-coming soon
+@article{yu2025omnialpha0,
+  title   = {OmniAlpha: A Sequence-to-Sequence Framework for Unified Multi-Task RGBA Generation},
+  author  = {Hao Yu and Jiabo Zhan and Zile Wang and Jinglin Wang and Huaisong Zhang and Hongyu Li and Xinrui Chen and Yongxian Wei and Chun Yuan},
+  year    = {2025},
+  journal = {arXiv preprint arXiv: 2511.20211}
+}
 ```
