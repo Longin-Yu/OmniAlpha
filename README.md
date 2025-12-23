@@ -89,4 +89,13 @@ Feel free to reach out via email at longinyh@gmail.com. You can also open an iss
   year    = {2025},
   journal = {arXiv preprint arXiv: 2511.20211}
 }
+@misc{wang2025alphavaeunifiedendtoendrgba,
+      title={AlphaVAE: Unified End-to-End RGBA Image Reconstruction and Generation with Alpha-Aware Representation Learning}, 
+      author={Zile Wang and Hao Yu and Jiabo Zhan and Chun Yuan},
+      year={2025},
+      eprint={2507.09308},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2507.09308}, 
+}
 ```
