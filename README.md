@@ -2,7 +2,7 @@
 
 ---
 
-**This is the official repository for "OmniAlpha: A Sequence-to-Sequence Framework for Unified Multi-Task RGBA Generation".**
+**This is the official repository for "[OmniAlpha: A Sequence-to-Sequence Framework for Unified Multi-Task RGBA Generation](https://arxiv.org/pdf/2511.20211)".**
 
 ![examples](assets/examples_01.png)
 
