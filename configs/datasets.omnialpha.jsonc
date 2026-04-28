@@ -1,0 +1,66 @@
+/*
+    Schema:
+        "datasets": {
+            "<dataset_name>": {
+                "class": "<dataset_class>", // optional, default to the specified one in the code
+                **kwargs // the arguments to initialize the dataset class
+            }
+        },
+        "splits": {
+            "<split_name>": [
+                {
+                    "dataset": "<dataset_name>",
+                    // optional slicing parameters
+                    "starts": <int>, // optional, default to None
+                    "ends": <int>,   // optional, default to None
+                    "repeat": <int>  // optional, default to 1
+                }
+            ]
+        }
+*/
+
+{
+    "default_init_params": {
+        // "force_size": 512,
+        // "square_center_crop": true
+    },
+    "datasets": {
+        "AIM-synthetic": {
+            "data_path": "/path/to/datasets/AIM-synthetic/AIM-synthetic_matting.jsonl",
+            "image_dir": "/path/to/datasets/AIM-synthetic"
+        },
+        "AlphaVAE_text2rgba": {
+            "data_path": "/path/to/datasets/AlphaVAE/AlphaVAE_text2rgba.jsonl",
+            "image_dir": "/path/to/datasets/AlphaVAE"
+        },
+        "OBER-Train_removal": {
+            "data_path": "/path/to/datasets/OBER-Train/OBER-Train_removal.jsonl",
+            "image_dir": "/path/to/datasets/OBER-Train"
+        },
+        "PrismLayers_5imgs": {
+            "data_path": "/path/to/datasets/PrismLayers_5imgs/PrismLayers_layerdecompose_train.jsonl",
+            "image_dir": "/path/to/datasets/PrismLayers_5imgs"
+        },
+        "RefMatte_15k_base": {
+            "data_path": "/path/to/datasets/RefMatte_15k_base/RefMatte_15k_base_refmatting.jsonl",
+            "image_dir": "/path/to/datasets/RefMatte_15k_base"
+        },
+    },
+    "splits": {
+        "train": [
+            {"dataset": "AlphaVAE_text2rgba", "ends": -50},
+            {"dataset": "AIM-synthetic", "ends": -50},
+            {"dataset": "OBER-Train_removal", "ends": -50},
+            {"dataset": "PrismLayers_5imgs", "ends": -50},
+            {"dataset": "RefMatte_15k_base", "ends": -50},
+        ],
+        "valid": [
+            // total need: 64, e.g. 12 + 13 * 4
+            {"dataset": "AlphaVAE_text2rgba", "starts": -16},
+            {"dataset": "AIM-synthetic", "starts": -16},
+            {"dataset": "OBER-Train_removal", "starts": -16},
+            {"dataset": "PrismLayers_5imgs", "starts": -13},
+            {"dataset": "RefMatte_15k_base", "starts": -16},
+        ]
+    }
+}

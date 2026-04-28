@@ -42,8 +42,10 @@ from PIL import Image
 from PIL.ImageOps import exif_transpose
 from torch.utils.data import Dataset
 from torchvision import transforms
-from torchvision.transforms.functional import crop
+import torchvision.transforms.functional as F
+# from torchvision.transforms.functional import crop
 from tqdm.auto import tqdm
+from functools import partial
 
 # from transformers import CLIPTokenizer, PretrainedConfig, T5TokenizerFast
 
@@ -81,17 +83,19 @@ from dataclasses import dataclass, field, asdict
 from transformers import HfArgumentParser
 from transformers.image_utils import ChannelDimension
 
-from accelerate.utils import gather_object
-
 if is_wandb_available():
     import wandb
 
 from alpha.args import ModelArguments, CustomTrainingArguments, DataArguments
-from alpha.utils import alpha_blend, load_json_file
+from alpha.utils import alpha_blend, load_json_file, all_gather_flattened_objects
 from alpha.vae.modeling import load_vae_from_local_dir
 from alpha.pipelines.qwen_image_edit import CustomQwenImageEditPlusPipeline as QwenImageEditPlusPipeline
 from alpha.pipelines.qwen_image_edit import QwenImageEditModules
-from alpha.data import DatasetManager
+from alpha.data import DatasetManager, TI2IDataset, DistributedWeightedSampler
+from alpha.utils.pil import (
+    create_image_grid as create_flat_image_grid,
+    resize_image_to_max_pixels,
+)
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 check_min_version("0.33.0.dev0")
@@ -105,6 +109,9 @@ class TrainingArguments(ModelArguments, CustomTrainingArguments, DataArguments):
     def validate(args: "TrainingArguments"):
         if args.pretrained_model_name_or_path is None:
             raise ValueError("You must specify a pretrained model name or path.")
+        
+        if args.enable_weights:
+            raise NotImplementedError("Enable weights is not supported yet because of the division BUG (steps=num_samples/num_process**2).")
 
         if args.train_text_encoder:
             raise NotImplementedError("Training text encoder is not supported yet.")
@@ -151,83 +158,28 @@ def convert_to_rgb(img: PIL.Image.Image) -> PIL.Image.Image:
         return img.convert('RGB')
 
 def create_image_grid(data_list: List[Dict], gap: int = 10) -> Optional[PIL.Image.Image]:
-    """
-    根据您的规范，从数据列表创建复杂的网格图像。
-    - 验证所有输入图像必须是 RGBA 模式。
-    - 每一行 (item) 包含: [input_images..., output_images..., predictions...]
-    - 自动处理可变的行长（不再使用占位符填充）。
-    - 自动计算每列的最大宽度和每行的最大高度。
-    - 在白色和黑色背景上创建并排的双重网格。
-    """
-    
-    all_rows_images: List[List[PIL.Image.Image]] = []
-    all_rows_locations: List[List[Tuple[int, int]]] = []
-    max_width = 0
-    current_y = 0
-
-    # --- 1. 收集所有图像并验证 RGBA ---
+    rows: List[List[List[PIL.Image.Image]]] = []
     for item in data_list:
-        row_images: List[PIL.Image.Image] = []
-        row_locations: List[Tuple[int, int]] = []
-        current_x = 0
-        row_max_height = 0
+        row_groups: List[List[PIL.Image.Image]] = []
         for key in ["input_images", "output_images", "predictions"]:
-            if key in item:
-                for img in item[key]:
-                    assert isinstance(img, PIL.Image.Image)
-                    if img.mode != 'RGBA':
-                        raise ValueError(f"图像 {key}.{img} 必须是 RGBA 模式，但检测到: {img.mode}。")
-                    row_images.append(img)
-                    row_locations.append((current_x, current_y))
-                    current_x += img.width + gap
-                    row_max_height = max(row_max_height, img.height)
-            current_x += gap * 3  # 每个类别之间的额外间隙
-        max_width = max(max_width, current_x)
-        current_y += row_max_height + gap
-        all_rows_images.append(row_images)
-        all_rows_locations.append(row_locations)
-
-    # --- 4. 创建最终的画布 (Canvas) ---
-    # 尺寸计算逻辑与之前相同
-    
-    # 创建双倍宽度的画布，左白右黑
-    grid_image = PIL.Image.new('RGB', (max_width * 2 + gap, current_y), (255, 255, 255))
-    black_bg = PIL.Image.new('RGB', (max_width, current_y), (0, 0, 0)) # 注意：黑色背景宽度应为 total_width
-    grid_image.paste(black_bg, (max_width + gap, 0)) # 粘贴时考虑 gap
-
-
-    # --- 5. 将所有图像粘贴到网格上 (不再有占位符) ---
-    # for i in range(len(all_rows_images)): # 遍历每一行
-        
-    #     # 我们必须遍历 max_cols 以保持列对齐
-    #     for j in range(max_cols): 
-            
-    #         # 关键：检查该单元格 (i, j) 是否真的有图像
-    #         if j < len(all_rows_images[i]):
-    #             img = all_rows_images[i][j]
-                
-    #             # 粘贴到左侧 (白色背景)
-    #             # 使用 img 作为 mask (蒙版)，因为我们已验证它是 RGBA
-    #             grid_image.paste(img, (current_x_left, current_y), img)
-                
-    #             # 粘贴到右侧 (黑色背景)
-    #             grid_image.paste(img, (current_x_right, current_y), img)
-    
-    for row_images, row_locations in zip(all_rows_images, all_rows_locations):
-        for img, (x, y) in zip(row_images, row_locations):
-            # 粘贴到左侧 (白色背景)
-            grid_image.paste(img, (x, y), img)
-            # 粘贴到右侧 (黑色背景)
-            grid_image.paste(img, (x + max_width + gap, y), img)
-
-    return grid_image
+            group_images: List[PIL.Image.Image] = []
+            for img in item.get(key, []):
+                assert isinstance(img, PIL.Image.Image)
+                if img.mode != "RGBA":
+                    raise ValueError(f"图像 {key}.{img} 必须是 RGBA 模式，但检测到: {img.mode}。")
+                group_images.append(img)
+            if group_images:
+                row_groups.append(group_images)
+        if row_groups:
+            rows.append(row_groups)
+    return create_flat_image_grid(rows, gap=gap) if rows else None
 
 def log_validation(
     pipeline: QwenImageEditPlusPipeline,
     accelerator: Accelerator,
-    val_dataloader: Dataset,
+    val_dataloader: torch.utils.data.DataLoader,
     global_step: int,
-    seed: int,
+    args: TrainingArguments,
 ):
     with accelerator.autocast():
         device = accelerator.device
@@ -242,6 +194,25 @@ def log_validation(
             width = batch["output_images"][0][0].width
             assert len(batch["prompts"]) == 1, "Batch size greater than 1 is not supported for validation."
             
+            ########### RECONTRUCTION FOR VAE EVAL ###########
+            
+            reconstructions = []
+            
+            # vae reconstruction of output images:
+            if args.eval_show_reconstruction:
+                vae: AutoencoderKLQwenImage = pipeline.vae
+                vae_images, vae_image_sizes = pipeline.prepare_images(
+                    images=batch["output_images"][0],
+                    prepare_type='vae',
+                    reshape=False,
+                ) 
+                for output_image in vae_images:
+                    rec = vae(output_image.to(device=device, dtype=pipeline.dtype))[0][:, :, 0] # vae(output_image)[0] for output.sample
+                    rec = pipeline.image_processor.postprocess(rec)[0]
+                    reconstructions.append(rec)
+                
+            ########### END ###########
+
             predictions = pipeline(
                 negative_prompt="",
                 prompt=prompts,
@@ -251,23 +222,21 @@ def log_validation(
                 width=width,
                 true_cfg_scale=4,
                 # debug=True,
-                generator=torch.Generator(device).manual_seed(seed),
+                generator=torch.Generator(device).manual_seed(args.seed),
                 frames=frames,
             ).images
             
             data.append({
                 "prompt": prompts[0],
                 "input_images": batch.get("input_images", [[]])[0],
-                "output_images": batch["output_images"][0],
+                "output_images": batch["output_images"][0] + reconstructions,
                 "predictions": predictions,
             })
+            
+    logger.info(f"Before all_gather_object: {len(data)}")
+    data = all_gather_flattened_objects(data)
+    logger.info(f"After all_gather_object: {len(data)}")
     
-    data_from_all_processes = [None] * accelerator.num_processes
-    torch.distributed.all_gather_object(data_from_all_processes, data)
-    data = []
-    for proc_data in data_from_all_processes:
-        # data.extend(pickle.loads(proc_data))
-        data.extend(proc_data)
     
     """
     Compose the following structure into a big figure:
@@ -280,8 +249,39 @@ def log_validation(
     """
     
     # print(data)
+    if not accelerator.is_main_process:
+        return
     
+    # Save individually 
+    root_dir = os.path.join(args.output_dir, f"validation_samples_step_{global_step}")
+    os.makedirs(root_dir, exist_ok=True)
+    for i, item in enumerate(data):
+        prompt = item["prompt"]
+        input_images = item["input_images"]
+        output_images = item["output_images"]
+        predictions = item["predictions"]
+        
+        with open(os.path.join(root_dir, f"{i:03d}_prompt.txt"), "w") as f:
+            f.write(prompt)
+        
+        # Save input images
+        for j, img in enumerate(input_images):
+            img.save(os.path.join(root_dir, f"{i:03d}_input_{j:02d}.png"))
+        
+        for j, img in enumerate(output_images):
+            img.save(os.path.join(root_dir, f"{i:03d}_output_{j:02d}.png"))
+        
+        for j, img in enumerate(predictions):
+            img.save(os.path.join(root_dir, f"{i:03d}_pred_{j:02d}.png"))
+    
+    # Make grid
     grid_image_pil = create_image_grid(data, gap=8)
+    logger.info(f"Created grid image: {grid_image_pil.size if grid_image_pil else None}")
+    
+    # Save to disk
+    grid_image_pil.save(os.path.join(args.output_dir, f"grid_{global_step}.png"))
+    
+    grid_image_pil = resize_image_to_max_pixels(grid_image_pil, 8192 ** 2)
     
     text_to_log = ""
     prompt_lines = []
@@ -299,11 +299,11 @@ def log_validation(
             if grid_image_pil is not None:
                 try:
                     # 将 PIL (H, W, C) 转换为 Numpy (C, H, W)
-                    grid_image_np = np.array(grid_image_pil).transpose(2, 0, 1)
+                    grid_image_np = np.ascontiguousarray(np.array(grid_image_pil).transpose(2, 0, 1))
                     
                     # 添加到 TensorBoard
                     writer.add_image(
-                        "Validation/Image_Grid", # Tagn
+                        "Validation/Image_Grid", # Tag
                         grid_image_np,
                         global_step=global_step
                     )
@@ -320,89 +320,6 @@ def log_validation(
                     )
                 except Exception as e:
                     accelerator.print(f"[ERROR] 无法记录文本到 TensorBoard: {e}")
-
-class TI2IDataset(Dataset):
-    
-    exist_paths: Set[str] = set()
-    
-    def __init__(
-        self,
-        image_dir: str,
-        data_path: Optional[str] = None,
-        data: Optional[List[Dict]] = None,
-    ):
-        if data is None and data_path is None:
-            raise ValueError("You must specify either `data` or `data_path`.")
-        if data is not None and data_path is not None:
-            raise ValueError("You must specify only one of `data` or `data_path`.")
-        
-        self.data = data or []
-        self.data_path = data_path
-        self.image_dir = image_dir
-        if data_path is not None:
-            with open(data_path, 'r') as df:
-                if data_path.endswith('.jsonl'):
-                    data_items = [json.loads(line) for line in df]
-                else:
-                    data_items = json.load(df)
-            self.inplace_and_verify_data(data_items, image_dir)
-            self.data.extend(data_items)
-        
-    def inplace_and_verify_data(self, data_items, image_dir):
-        """
-        Verify:
-        1. all items have this schema: {"prompt": str, "input_images": List[str], "output_images": List[str]}
-        2. all images exist
-        """
-        for item in data_items:
-            if "prompt" not in item or "input_images" not in item or "output_images" not in item:
-                raise ValueError("Each data item must have 'prompt', 'input_images', and 'output_images' fields.")
-            if not isinstance(item["prompt"], str):
-                raise ValueError("'prompt' must be a string.")
-            if not isinstance(item["input_images"], list) or not all(isinstance(i, str) for i in item["input_images"]):
-                raise ValueError("'input_images' must be a list of strings.")
-            if not isinstance(item["output_images"], list) or not all(isinstance(i, str) for i in item["output_images"]):
-                raise ValueError("'output_images' must be a list of strings.")
-            for lst in [item["input_images"], item["output_images"]]:
-                for idx in range(len(lst)):
-                    img_path = lst[idx]
-                    full_path = os.path.join(image_dir, img_path)
-                    if full_path not in TI2IDataset.exist_paths and not os.path.exists(full_path):
-                        raise FileNotFoundError(f"Image file {full_path} does not exist.")
-                    TI2IDataset.exist_paths.add(full_path)
-                    lst[idx] = full_path
-    
-    # def preprocess_image(self, image):
-    #     image = exif_transpose(image)
-    #     if not image.mode == "RGBA":
-    #         image = image.convert("RGBA")
-    #     return transforms.Normalize([0.5], [0.5])(transforms.ToTensor()(image))
-
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, index):
-        item = self.data[index]
-        example = {}
-        input_images = []
-        for img_path in item["input_images"]:
-            image = Image.open(img_path).convert("RGBA")
-            # image = self.preprocess_image(image)
-            input_images.append(image)
-        if len(input_images) > 0:
-            # input_images = torch.stack(input_images)
-            example["input_images"] = input_images  # (N, C, H, W)
-
-        output_images = []
-        for img_path in item["output_images"]:
-            image = Image.open(img_path).convert("RGBA")
-            # image = self.preprocess_image(image)
-            output_images.append(image)
-        # output_images = torch.stack(output_images)
-        example["output_images"] = output_images  # (M, C, H, W)
-
-        example["prompt"] = item["prompt"]
-        return example
 
 def collate_fn(examples):
     assert len(examples) == 1, "Batch size greater than 1 is not supported."
@@ -475,7 +392,15 @@ def main(args: TrainingArguments):
     # If passed along, set the training seed now.
     if args.seed is not None:
         set_seed(args.seed)
-
+        
+    if args.debug:
+        # info the setting of distributed training
+        logger.info(f"  {accelerator.state.distributed_type=}")
+        logger.info(f"  {accelerator.num_processes=}")
+        logger.info(f"  {accelerator.process_index=}")
+        logger.info(f"  {accelerator.local_process_index=}")
+        logger.info(f"  {accelerator.device=}")
+        
     # Handle the repository creation
     if accelerator.is_main_process:
         if args.output_dir is not None:
@@ -704,26 +629,48 @@ def main(args: TrainingArguments):
         )
 
     # Dataset and DataLoaders creation:
-    dataset_manager = DatasetManager(args.dataset_path).set_default_class(TI2IDataset)
-    train_dataset, train_weights = dataset_manager.get_split("train", enable_weight=True, verbose=True)
+    dataset_manager = DatasetManager(args.dataset_path).set_default_class(
+        partial(TI2IDataset, multiple_of=16, max_pixels=args.max_pixels)
+    )
+    if args.enable_weights:
+        train_dataset, train_weights = dataset_manager.get_split("train", enable_weight=True, verbose=True)
+        shuffle=False
+        
+        logger.info(f"Initializing DistributedWeightedSampler:")
+        logger.info(f"    {len(train_dataset)=}, {len(train_weights)=}, {train_weights[:10]=}")
+        logger.info(f"    {accelerator.num_processes=}, {accelerator.process_index=}, {args.seed=}")
+
+        train_sampler = DistributedWeightedSampler(
+            dataset=train_dataset,
+            weights=train_weights,
+            num_samples=len(train_dataset),
+            replacement=True,
+            num_replicas=accelerator.num_processes,
+            rank=accelerator.process_index,
+            seed=args.seed if args.seed is not None else 0
+        )
+        
+        logger.info(f"    {train_sampler.num_samples_per_replica=}, {train_sampler.total_size=}, {train_sampler.num_replicas=}, {train_sampler.rank=}")
+        
+    else:
+        train_dataset = dataset_manager.get_split("train", verbose=True)
+        shuffle = True
+        train_sampler = None
+        
     valid_dataset = dataset_manager.get_split("valid", verbose=True)
     
     logger.info(f"Number of training examples: {len(train_dataset)}")
     logger.info(f"Number of validation examples: {len(valid_dataset)}")
-
+    
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=args.train_batch_size,
-        # shuffle=True,
+        shuffle=shuffle,
         collate_fn=lambda examples: collate_fn(examples),
         num_workers=args.dataloader_num_workers,
-        sampler=WeightedRandomSampler(
-            weights=train_weights,
-            num_samples=len(train_dataset),
-            replacement=True,
-            generator=torch.Generator().manual_seed(args.seed),
-        )
+        sampler=train_sampler,
     )
+    
     valid_dataloader = torch.utils.data.DataLoader(
         valid_dataset,
         batch_size=1,
@@ -776,6 +723,7 @@ def main(args: TrainingArguments):
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
     logger.info(f"  Total optimization steps = {args.max_train_steps}")
+    logger.info(f"  Number of update steps per epoch = {num_update_steps_per_epoch}")
     global_step = 0
     first_epoch = 0
 
@@ -816,6 +764,26 @@ def main(args: TrainingArguments):
     )
 
     raw_scheduler = modules.scheduler
+    
+    if args.eval_before_train:
+
+        accelerator.wait_for_everyone()
+        val_modules = modules.to_dict()
+        val_modules["transformer"] = unwrap_model(modules.transformer)
+        val_modules["scheduler"] = deepcopy(raw_scheduler)
+        val_pipeline = QwenImageEditPlusPipeline.from_pretrained(
+            args.pretrained_model_name_or_path,
+            revision=args.revision,
+            variant=args.variant,
+            torch_dtype=weight_dtype,
+            **val_modules,
+        ).to(accelerator.device, dtype=weight_dtype)
+        
+        with torch.no_grad():
+            log_validation(val_pipeline, accelerator, valid_dataloader, global_step, args)
+        
+        del val_pipeline, val_modules
+        free_memory()
 
     def get_sigmas(timesteps: torch.Tensor, n_dim=4, dtype=torch.float32):
         sigmas = modules.scheduler.sigmas.to(device=accelerator.device, dtype=dtype)
@@ -831,10 +799,14 @@ def main(args: TrainingArguments):
     # vae_scale_factor = 2 ** len(modules.vae.temperal_downsample)
 
     for epoch in range(first_epoch, args.num_train_epochs):
-            
+        
         modules.transformer.train()
 
         for step, batch in enumerate(train_dataloader):
+        
+            if step % 100 == 0 and args.debug:
+                logger.info(f"Training | {epoch=}, {step=}/{len(train_dataloader)=}")
+                
             with accelerator.accumulate(modules.transformer):
                 with accelerator.autocast():
                     modules.scheduler = deepcopy(raw_scheduler)
@@ -944,6 +916,7 @@ def main(args: TrainingArguments):
                             image=input_prompt_images if has_input_images else None, # concat on width
                             device=accelerator.device,
                         )
+                        # TODO: in latest version of diffusers, qwen removed this parameter.
                         txt_seq_lens = prompt_embeds_mask.sum(dim=1).tolist()
                         
                     # print(f"{packed_noisy_model_input_concated.shape=}")
@@ -960,6 +933,7 @@ def main(args: TrainingArguments):
                         encoder_hidden_states_mask=prompt_embeds_mask,
                         encoder_hidden_states=prompt_embeds,
                         img_shapes=img_shapes,
+                        # TODO: in latest version of diffusers, qwen removed this parameter.
                         txt_seq_lens=txt_seq_lens,
                         return_dict=False,
                     )[0]
@@ -1054,7 +1028,7 @@ def main(args: TrainingArguments):
                     ).to(accelerator.device, dtype=weight_dtype)
                     
                     with torch.no_grad():
-                        log_validation(val_pipeline, accelerator, valid_dataloader, global_step, seed=args.seed)
+                        log_validation(val_pipeline, accelerator, valid_dataloader, global_step, args)
                     
                     del val_pipeline, val_modules
                     free_memory()
@@ -1065,7 +1039,7 @@ def main(args: TrainingArguments):
                 break
         
         if accelerator.sync_gradients:
-            if accelerator.distributed_type == DistributedType.DEEPSPEED or accelerator.is_main_process:
+            if accelerator.is_main_process:
                 if epoch > 0 and epoch % args.checkpointing_epochs == 0:
                     # TODO remove transformer
                     # _before_ saving state, check if this save would set us over the `checkpoints_total_limit`

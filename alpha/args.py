@@ -123,6 +123,15 @@ class DataArguments:
             "help": "Run validation every X epochs; generates num_validation_images each time."
         },
     )
+    eval_before_train: bool = field(
+        default=False, metadata={"help": "Run validation before starting training."}
+    )
+    eval_show_reconstruction: bool = field(
+        default=False, metadata={"help": "Show reconstruction results during validation."}
+    )
+    enable_weights: bool = field(
+        default=False, metadata={"help": "Enable weighting for training samples."}
+    )
 
 
 @dataclass
@@ -193,6 +202,10 @@ class CustomTrainingArguments:
     )
     prob_drop_prompt: float = field(
         default=0.0, metadata={"help": "Probability of dropping text encoder input."}
+    )
+    max_pixels: Optional[int] = field(
+        default=1048576,
+        metadata={"help": "Max number of pixels (H*W) for input images; resizes if exceeded."}
     )
 
     # Optimizer 细节

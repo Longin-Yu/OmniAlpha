@@ -8,7 +8,7 @@ export NCCL_DEBUG=WARN
 
 # Model Configuration
 MODEL_ARGS=(
-    --pretrained_model_name_or_path /path/to/Qwen/Qwen-Image-Edit-2509
+    --pretrained_model_name_or_path Qwen/Qwen-Image-Edit-2509
     --pretrained_vae_model /path/to/vae/checkpoint
     --guidance_scale 1
     --load_lora /path/to/lora/checkpoint/pytorch_lora_weights.safetensors

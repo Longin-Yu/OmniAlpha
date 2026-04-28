@@ -47,7 +47,7 @@ class CustomQwenImageEditPlusPipeline(QwenImageEditPlusPipeline):
 
 
     @staticmethod
-    # Copied from diffusers.pipelines.qwenimage.pipeline_qwenimage.QwenImagePipeline._pack_latents
+    # Modified from diffusers.pipelines.qwenimage.pipeline_qwenimage.QwenImagePipeline._pack_latents
     def pack_latents_multi_frames(latents):
         """
         B, C, F, H, W -> B, F * H/2 * W/2, 4C
@@ -59,7 +59,7 @@ class CustomQwenImageEditPlusPipeline(QwenImageEditPlusPipeline):
         return latents
 
     @staticmethod
-    # Copied from diffusers.pipelines.qwenimage.pipeline_qwenimage.QwenImagePipeline._unpack_latents
+    # Modified from diffusers.pipelines.qwenimage.pipeline_qwenimage.QwenImagePipeline._unpack_latents
     def unpack_latents_multi_frames(latents, frames, height_latents, width_latents):
         """
         B, F * H/2 * W/2, 4C -> B, C, F, H, W
@@ -154,8 +154,8 @@ class CustomQwenImageEditPlusPipeline(QwenImageEditPlusPipeline):
             image_width / image_height
         )
         return (
-            self.image_processor.preprocess(img, new_width, new_height).unsqueeze(2),
-            (new_width, new_height)
+            self.image_processor.preprocess(img, new_height, new_width).unsqueeze(2),
+            (new_height, new_width)
         )
         
     def prepare_images(
@@ -164,6 +164,10 @@ class CustomQwenImageEditPlusPipeline(QwenImageEditPlusPipeline):
         prepare_type: str,
         reshape: bool = True
     ):
+        """
+        Returns:
+            A tuple, List of prepared images and List of sizes. Note: for vae images, the shape is (height, width); while for condition images, the shape is (width, height).
+        """
         assert prepare_type in ['condition', 'vae'], "prepare_type must be either 'condition' or 'vae'"
         if images is None:
             return [], []
@@ -229,7 +233,7 @@ class CustomQwenImageEditPlusPipeline(QwenImageEditPlusPipeline):
                     image_latents, batch_size, num_channels_latents, image_latent_height, image_latent_width
                 )
                 all_image_latents.append(image_latents)
-            image_latents = torch.cat(all_image_latents, dim=1)
+            image_latents = torch.cat(all_image_latents, dim=1) # B L C
 
         if isinstance(generator, list) and len(generator) != batch_size:
             raise ValueError(
@@ -433,7 +437,7 @@ class CustomQwenImageEditPlusPipeline(QwenImageEditPlusPipeline):
             images=image,
             prepare_type='vae',
             reshape=reshape
-        )
+        ) # List(axis=F) of [B=1 C F=1 H W]
         
         if debug:
             print(f"{vae_images[0].shape=}, {vae_image_sizes=}")
@@ -503,7 +507,7 @@ class CustomQwenImageEditPlusPipeline(QwenImageEditPlusPipeline):
                 *([(1, latent_height // 2, latent_width // 2)] * frames),
                 *[
                     (1, vae_height // self.vae_scale_factor // 2, vae_width // self.vae_scale_factor // 2)
-                    for vae_width, vae_height in vae_image_sizes
+                    for vae_height, vae_width in vae_image_sizes
                 ],
             ]
         ] * batch_size

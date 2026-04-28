@@ -11,7 +11,7 @@ train_data_dir=(
     "/path/to/your/dataset1"
     "/path/to/your/dataset2"
 )
-pretrained_vae_path="/path/to//Qwen/Qwen-Image-Edit-2509/vae_rgba"
+pretrained_vae_path="/path/to/Qwen-Image-Edit-2509/vae_rgba"
 
 accelerate launch --config_file=configs/accelerate.yaml \
     --num_processes=8 --main_process_port=$MASTER_PORT tasks/vae/finetune.py \

@@ -1,0 +1,68 @@
+{
+  // Dataset registry: each source defines its jsonl and root path.
+  "datasets": {
+    "aim_synthetic_matting": {
+      "jsonl_path": "/path/to/datasets/AIM-synthetic_matting.jsonl",
+      "base_image_path": "/path/to/datasets"
+    },
+    "ober_train_removal": {
+      "jsonl_path": "/path/to/datasets/OBER-Train_removal.jsonl",
+      "base_image_path": "/path/to/datasets"
+    },
+    "prismlayers_2layers": {
+      "jsonl_path": "/path/to/datasets/PrismLayers_layerdecompose_train_2layers.jsonl",
+      "base_image_path": "/path/to/datasets"
+    },
+    "refmatte_15k_base_refmatting": {
+      // Use your de-duplicated one-to-one version here.
+      "jsonl_path": "/path/to/datasets/RefMatte_15k_base_refmatting.dedup.jsonl",
+      "base_image_path": "/path/to/datasets"
+    }
+    // "alphavae_text2rgba": {
+    //   "jsonl_path": "/path/to/datasets/AlphaVAE_text2rgba.jsonl",
+    //   "base_image_path": "/path/to/datasets"
+    // }
+  },
+
+  // Split definition, weight<=1.0
+  "splits": {
+    "train": [
+      {
+        "dataset": "aim_synthetic_matting",
+        "starts": 0,
+        "ends": 8700,
+        "sample": { "count": 1000, "seed": 20260320 },
+        "weight": 1.0
+      },
+      {
+        "dataset": "ober_train_removal",
+        "starts": 0,
+        "ends": 37000,
+        "sample": { "count": 1000, "seed": 20260321 },
+        "weight": 1.0
+      },
+      {
+        "dataset": "prismlayers_2layers",
+        "starts": 0,
+        "ends": 2400,
+        "sample": { "count": 1000, "seed": 20260322 },
+        "weight": 1.0
+      },
+      {
+        "dataset": "refmatte_15k_base_refmatting",
+        "starts": 0,
+        "ends": 15000,
+        "sample": { "count": 1000, "seed": 20260323 },
+        "weight": 1.0
+      }
+      // ,
+      // {
+      //   "dataset": "alphavae_text2rgba",
+      //   "starts": 0,
+      //   "ends": -1,
+      //   "sample": { "count": 1000, "seed": 20260324 },
+      //   "weight": 1.0
+      // }
+    ]
+  }
+}

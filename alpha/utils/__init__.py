@@ -5,6 +5,7 @@ from typing import *
 from pathlib import Path
 import fnmatch
 import torch
+import torch.distributed as dist
 
 
 BackgroundType = Union[float, torch.Tensor]
@@ -90,6 +91,26 @@ def copy_code_files(source_dir: str, target_dir: str, excludes: Optional[List[st
             shutil.copy2(source_path, target_path)
             # print in cyan
             # print(f"\033[96mCopied: {source_path} -> {target_path}\033[0m")
+
+
+def all_gather_flattened_objects(data: Any) -> List[Any]:
+    if not dist.is_available() or not dist.is_initialized():
+        if data is None:
+            return []
+        return data if isinstance(data, list) else [data]
+
+    gathered = [None for _ in range(dist.get_world_size())]
+    dist.all_gather_object(gathered, data)
+
+    flattened = []
+    for item in gathered:
+        if item is None:
+            continue
+        if isinstance(item, list):
+            flattened.extend(item)
+        else:
+            flattened.append(item)
+    return flattened
 
 # 示例用法：
 # copy_code_files('/path/to/source', '/path/to/target')
