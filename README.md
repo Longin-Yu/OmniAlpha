@@ -1,4 +1,4 @@
-# OmniAlpha: A Sequence-to-Sequence Framework for Unified Multi-Task RGBA Generation
+# OmniAlpha: Aligning Transparency-Aware Generation via Multi-Task Unified Reinforcement Learning
 
 <p align="center">
   <a href="https://github.com/Longin-Yu/OmniAlpha"><img src="https://img.shields.io/badge/GitHub-OmniAlpha-181717.svg?logo=github" alt="GitHub"></a>
@@ -8,7 +8,7 @@
 
 ---
 
-**This is the official repository for "[OmniAlpha: A Sequence-to-Sequence Framework for Unified Multi-Task RGBA Generation](https://arxiv.org/abs/2511.20211)".**
+**This is the official repository for "[OmniAlpha: Aligning Transparency-Aware Generation via Multi-Task Unified Reinforcement Learning](https://arxiv.org/abs/2511.20211)".**
 
 ![examples](assets/examples_01.png)
 
@@ -214,7 +214,7 @@ Feel free to reach out via email at longinyh@gmail.com. You can also open an iss
 
 ```bibtex
 @article{yu2025omnialpha0,
-  title   = {OmniAlpha: A Sequence-to-Sequence Framework for Unified Multi-Task RGBA Generation},
+  title   = {OmniAlpha: Aligning Transparency-Aware Generation via Multi-Task Unified Reinforcement Learning},
   author  = {Hao Yu and Jiabo Zhan and Zile Wang and Jinglin Wang and Huaisong Zhang and Hongyu Li and Xinrui Chen and Yongxian Wei and Chun Yuan},
   year    = {2025},
   journal = {arXiv preprint arXiv: 2511.20211}

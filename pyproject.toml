@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "alpha"
 version = "0.1.0"
-description = "OmniAlpha: A Sequence-to-Sequence Framework for Unified Multi-Task RGBA Generation"
+description = "OmniAlpha: Aligning Transparency-Aware Generation via Multi-Task Unified Reinforcement Learning"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
