@@ -1,5 +1,9 @@
 # OmniAlpha: Aligning Transparency-Aware Generation via Multi-Task Unified Reinforcement Learning
 
+<h3 align="center">
+  🎉 Accepted to ACM MM 2026 🎉
+</h3>
+
 <p align="center">
   <a href="https://github.com/Longin-Yu/OmniAlpha"><img src="https://img.shields.io/badge/GitHub-OmniAlpha-181717.svg?logo=github" alt="GitHub"></a>
   <a href="https://arxiv.org/abs/2511.20211"><img src="https://img.shields.io/badge/arXiv-2511.20211-b31b1b.svg" alt="arXiv"></a>
@@ -7,6 +11,7 @@
 </p>
 
 ---
+
 
 **This is the official repository for "[OmniAlpha: Aligning Transparency-Aware Generation via Multi-Task Unified Reinforcement Learning](https://arxiv.org/abs/2511.20211)".**
 
