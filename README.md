@@ -1,7 +1,7 @@
 # OmniAlpha: Aligning Transparency-Aware Generation via Multi-Task Unified Reinforcement Learning
 
 <h3 align="center">
-  🎉 Accepted to ACM MM 2026 🎉
+  🎉 Accepted to ACM MM 2026 (Oral) 🎉
 </h3>
 
 <p align="center">
